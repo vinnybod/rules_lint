@@ -24,6 +24,10 @@ load("@aspect_rules_lint//lint:checkstyle.bzl", "fetch_checkstyle")
 
 fetch_checkstyle()
 
+load("@aspect_rules_lint//lint:spotbugs.bzl", "fetch_spotbugs")
+
+fetch_spotbugs()
+
 load("@aspect_rules_lint//lint:vale.bzl", "fetch_vale")
 
 fetch_vale()

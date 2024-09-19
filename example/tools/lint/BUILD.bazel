@@ -42,6 +42,12 @@ java_binary(
     runtime_deps = ["@com_puppycrawl_tools_checkstyle//jar"],
 )
 
+java_binary(
+    name = "spotbugs",
+    main_class = "edu.umd.cs.findbugs.LaunchAppropriateUI",
+    runtime_deps = ["@com_github_spotbugs_spotbugs"],
+)
+
 native_binary(
     name = "vale",
     src = select(
