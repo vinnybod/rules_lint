@@ -27,12 +27,12 @@ spotbugs = spotbugs_aspect(
 ```
 """
 
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+#load("@rules_jvm_external//:defs.bzl", "maven_install")
 load("//lint/private:lint_aspect.bzl", "LintOptionsInfo", "filter_srcs", "noop_lint_action", "output_files", "should_visit")
 
 _MNEMONIC = "AspectRulesLintSpotbugs"
 
-def spotbugs_action(ctx, executable, srcs, rulesets, stdout, exit_code = None, options = []):
+def spotbugs_action(ctx, executable, srcs, exclude_filter, stdout, exit_code = None, options = []):
     """Run PMD as an action under Bazel.
 
     Based on https://docs.pmd-code.org/latest/pmd_userdocs_installation.html#running-pmd-via-command-line
@@ -47,19 +47,22 @@ def spotbugs_action(ctx, executable, srcs, rulesets, stdout, exit_code = None, o
             If None, then fail the build when PMD exits non-zero.
         options: additional command-line options, see https://pmd.github.io/pmd/pmd_userdocs_cli_reference.html
     """
-    inputs = srcs + rulesets
+    inputs = srcs + [exclude_filter]
     outputs = [stdout]
 
     # Wire command-line options, see
     # https://docs.pmd-code.org/latest/pmd_userdocs_cli_reference.html
     args = ctx.actions.args()
+
+    args.add("-textui")
+
     args.add_all(options)
-    args.add("--rulesets")
-    args.add_joined(rulesets, join_with = ",")
 
     src_args = ctx.actions.args()
     src_args.use_param_file("%s", use_always = True)
-    src_args.add_all(srcs)
+    src_args.add_all([srcs])
+
+    print("args", args, src_args)
 
     if exit_code:
         command = "{SPOTBUGS} $@ >{stdout}; echo $? > " + exit_code.path
@@ -72,7 +75,7 @@ def spotbugs_action(ctx, executable, srcs, rulesets, stdout, exit_code = None, o
         inputs = inputs,
         outputs = outputs,
         command = command.format(SPOTBUGS = executable.path, stdout = stdout.path),
-        arguments = [args, "--file-list", src_args],
+        arguments = [args, src_args],
         mnemonic = _MNEMONIC,
         tools = [executable],
         progress_message = "Linting %{label} with Spotbugs",
@@ -83,19 +86,20 @@ def _spotbugs_aspect_impl(target, ctx):
     if not should_visit(ctx.rule, ctx.attr._rule_kinds):
         return []
 
-    files_to_lint = filter_srcs(ctx.rule)
+    files_to_lint = target[JavaInfo].runtime_output_jars
     outputs, info = output_files(_MNEMONIC, target, ctx)
     if len(files_to_lint) == 0:
         noop_lint_action(ctx, outputs)
         return [info]
 
     # https://github.com/pmd/pmd/blob/master/docs/pages/pmd/userdocs/pmd_report_formats.md
-    format_options = ["--format", "textcolor" if ctx.attr._options[LintOptionsInfo].color else "text"]
-    spotbugs_action(ctx, ctx.executable._spotbugs, files_to_lint, ctx.files._rulesets, outputs.human.out, outputs.human.exit_code, format_options)
-    spotbugs_action(ctx, ctx.executable._spotbugs, files_to_lint, ctx.files._rulesets, outputs.machine.out, outputs.machine.exit_code)
+    # format_options = ["--format", "textcolor" if ctx.attr._options[LintOptionsInfo].color else "text"]
+    format_options = []
+    spotbugs_action(ctx, ctx.executable._spotbugs, files_to_lint, ctx.file._exclude_filter, outputs.human.out, outputs.human.exit_code, format_options)
+    spotbugs_action(ctx, ctx.executable._spotbugs, files_to_lint, ctx.file._exclude_filter, outputs.machine.out, outputs.machine.exit_code)
     return [info]
 
-def lint_spotbugs_aspect(binary, rulesets, rule_kinds = ["java_binary", "java_library"]):
+def lint_spotbugs_aspect(binary, exclude_filter, rule_kinds = ["java_binary", "java_library"]):
     """A factory function to create a linter aspect.
 
     Attrs:
@@ -116,7 +120,7 @@ def lint_spotbugs_aspect(binary, rulesets, rule_kinds = ["java_binary", "java_li
         implementation = _spotbugs_aspect_impl,
         # Edges we need to walk up the graph from the selected targets.
         # Needed for linters that need semantic information like transitive type declarations.
-        # attr_aspects = ["deps"],
+        attr_aspects = ["deps"],
         attrs = {
             "_options": attr.label(
                 default = "//lint:options",
@@ -127,12 +131,10 @@ def lint_spotbugs_aspect(binary, rulesets, rule_kinds = ["java_binary", "java_li
                 executable = True,
                 cfg = "exec",
             ),
-            "_rulesets": attr.label_list(
-                allow_files = True,
-                mandatory = True,
-                allow_empty = False,
-                doc = "Ruleset files.",
-                default = rulesets,
+            "_exclude_filter": attr.label(
+                doc = "Report all bug instances except those matching the filter specified by this filter file",
+                allow_single_file = True,
+                default = exclude_filter,
             ),
             "_rule_kinds": attr.string_list(
                 default = rule_kinds,
@@ -141,10 +143,22 @@ def lint_spotbugs_aspect(binary, rulesets, rule_kinds = ["java_binary", "java_li
     )
 
 def fetch_spotbugs():
-    http_archive(
-        name = "com_github_spotbugs_spotbugs",
-        build_file_content = """java_import(name = "com_github_spotbugs_spotbugs", jars = glob(["*.jar"]), data = glob(["config/*"]), visibility = ["//visibility:public"])""",
-        sha256 = "67cdc52cceb17eae394f8fc3660f21659cf354908f818e4d1f45a6935c2e4425",
-        strip_prefix = "spotbugs-4.8.6/lib",
-        url = "https://github.com/spotbugs/spotbugs/releases/download/4.8.6/spotbugs-4.8.6.zip",
-    )
+    """A repository macro used from WORKSPACE to fetch ruff binaries.
+
+    Allows the user to select a particular ruff version, rather than get whatever is pinned in the `multitool.lock.json` file.
+
+    Args:
+        tag: a tag of ruff that we have mirrored, e.g. `v0.1.0`
+    """
+    pass
+
+#    maven_install(
+#        name = "maven_spotbugs",
+#        artifacts = [
+#            "com.github.spotbugs:spotbugs:4.8.6",
+#        ],
+#        fail_if_repin_required = True,
+#        fetch_sources = True,
+#        maven_instal_json = "//:rules_jvm_external~~maven~maven_spotbugs_install.json",
+#        strict_visibility = True,
+#    )

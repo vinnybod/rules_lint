@@ -7,4 +7,13 @@
 public class Foo {
   // this is confusing and probably a bug
   protected void finalize(int a) {}
+
+  public Boolean booleanMethod() {
+    return null;
+  }
+
+
+  public static double circumference(double diameter) {
+    return diameter * 3.141;
+  }
 }

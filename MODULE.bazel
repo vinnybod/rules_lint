@@ -16,6 +16,20 @@ bazel_dep(name = "bazel_skylib", version = "1.4.2")
 bazel_dep(name = "platforms", version = "0.0.7")
 bazel_dep(name = "rules_multirun", version = "0.9.0")
 bazel_dep(name = "rules_multitool", version = "0.4.0")
+bazel_dep(name = "rules_jvm_external", version = "6.4")
+
+maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
+maven.install(
+    name = "maven_spotbugs",
+    artifacts = [
+        "com.github.spotbugs:spotbugs:4.8.6",
+    ],
+    fail_if_repin_required = True,
+    fetch_sources = True,
+    lock_file = "//:rules_jvm_external~~maven~maven_spotbugs_install.json",
+    strict_visibility = True,
+)
+use_repo(maven, "maven_spotbugs")
 
 # Needed in the root because we dereference ProtoInfo in our aspect impl
 bazel_dep(name = "rules_proto", version = "6.0.0")
